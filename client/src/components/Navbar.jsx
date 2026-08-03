@@ -70,8 +70,12 @@ export default function Navbar() {
           </Link>
         )}
 
-        {user?.role === 'admin' && (
-          <Link to="/admin" className="champ-btn">Champ</Link>
+        {user && (
+          user.role === 'admin' ? (
+            <Link to="/admin" className="champ-btn">Champ</Link>
+          ) : (
+            <button type="button" className="champ-btn" onClick={(e) => e.preventDefault()}>Champ</button>
+          )
         )}
 
         {!user && location.pathname !== '/login' && <Link to="/login" className="nav-link-icon">Login</Link>}
