@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../api/axios';
+import OrderTrackingMap from '../components/OrderTrackingMap.jsx';
 
 function RateWidget({ orderId, productId, onRated }) {
   const [stars, setStars] = useState(0);
@@ -58,7 +59,9 @@ function RateWidget({ orderId, productId, onRated }) {
 export default function Orders() {
   const [orders, setOrders] = useState([]);
   const [ratedItems, setRatedItems] = useState({});
-  const [trackNote, setTrackNote] = useState('');
+  const [expandedTracking, setExpandedTracking] = useState(null); // order id or null
+  const [trackingData, setTrackingData] = useState({}); // { [orderId]: trackingResult }
+  const [trackingLoading, setTrackingLoading] = useState(false);
 
   const load = async () => {
     const [ordersRes, ratingsRes] = await Promise.all([
@@ -81,9 +84,23 @@ export default function Orders() {
     setRatedItems((prev) => ({ ...prev, [`${orderId}-${productId}`]: true }));
   };
 
-  const handleTrack = () => {
-    setTrackNote('Order tracking is coming soon.');
-    setTimeout(() => setTrackNote(''), 2500);
+  const toggleTracking = async (orderId) => {
+    if (expandedTracking === orderId) {
+      setExpandedTracking(null);
+      return;
+    }
+    setExpandedTracking(orderId);
+    if (!trackingData[orderId]) {
+      setTrackingLoading(true);
+      try {
+        const { data } = await api.get(`/orders/${orderId}/tracking`);
+        setTrackingData((prev) => ({ ...prev, [orderId]: data }));
+      } catch (err) {
+        setTrackingData((prev) => ({ ...prev, [orderId]: { stage: 'cancelled' } }));
+      } finally {
+        setTrackingLoading(false);
+      }
+    }
   };
 
   if (orders.length === 0) {
@@ -102,7 +119,6 @@ export default function Orders() {
   return (
     <div className="container">
       <h2 className="orders-page-title">Order History</h2>
-      {trackNote && <p className="rate-note">{trackNote}</p>}
 
       {orders.map((order) => {
         const productIds = order.items.map((i) => i.product);
@@ -151,11 +167,21 @@ export default function Orders() {
               ) : order.status === 'Delivered' ? (
                 <span className="rated-badge">✓ Rated</span>
               ) : (
-                <button className={`track-btn status-${order.status}`} onClick={handleTrack}>
-                  Track Order
+                <button className={`track-btn status-${order.status}`} onClick={() => toggleTracking(order._id)}>
+                  {expandedTracking === order._id ? 'Hide Tracking' : 'Track Order'}
                 </button>
               )}
             </div>
+
+            {expandedTracking === order._id && (
+              <div className="order-tracking-panel">
+                {trackingLoading && !trackingData[order._id] ? (
+                  <p className="rate-note">Loading tracking...</p>
+                ) : (
+                  <OrderTrackingMap tracking={trackingData[order._id]} />
+                )}
+              </div>
+            )}
           </div>
         );
       })}

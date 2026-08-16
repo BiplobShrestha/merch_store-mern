@@ -4,12 +4,19 @@ const Cart = require('../models/Cart');
 const Product = require('../models/Product');
 const Order = require('../models/Order');
 const { protect, admin } = require('../middleware/auth');
+const { shortestPathFromKathmandu, DELIVERY_REGIONS } = require('../utils/graph');
+const { computeTracking } = require('../utils/tracking');
 
 const router = express.Router();
 
 // @route POST /api/orders  - checkout: turns cart into an order
 router.post('/', protect, async (req, res, next) => {
   try {
+    const region = req.body?.region;
+    if (!region || !DELIVERY_REGIONS.includes(region)) {
+      return res.status(400).json({ message: 'Please select a valid delivery region' });
+    }
+
     const cart = await Cart.findOne({ user: req.user._id }).populate('items.product');
     if (!cart || cart.items.length === 0) {
       return res.status(400).json({ message: 'Cart is empty' });
@@ -61,6 +68,7 @@ router.post('/', protect, async (req, res, next) => {
       total: finalTotal,
       discountCode: appliedCode,
       discountAmount,
+      region,
     });
 
     // clear the cart
@@ -99,6 +107,14 @@ router.put('/:id/status', protect, admin, async (req, res, next) => {
     const { status } = req.body;
     const order = await Order.findById(req.params.id);
     if (!order) return res.status(404).json({ message: 'Order not found' });
+
+    // Trigger tracking start exactly once: first time an order moves to Processing.
+    if (status === 'Processing' && !order.approvedAt) {
+      order.approvedAt = new Date();
+      const route = shortestPathFromKathmandu(order.region);
+      order.route = route;
+    }
+
     order.status = status;
     await order.save();
     res.json(order);
@@ -113,6 +129,23 @@ router.delete('/:id', protect, admin, async (req, res, next) => {
     const order = await Order.findByIdAndDelete(req.params.id);
     if (!order) return res.status(404).json({ message: 'Order not found' });
     res.json({ message: 'Order deleted' });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// @route GET /api/orders/:id/tracking  - computed shipment position (owner or admin only)
+router.get('/:id/tracking', protect, async (req, res, next) => {
+  try {
+    const order = await Order.findById(req.params.id);
+    if (!order) return res.status(404).json({ message: 'Order not found' });
+
+    const isOwner = order.user.toString() === req.user._id.toString();
+    if (!isOwner && req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Not authorized to view this order' });
+    }
+
+    res.json(computeTracking(order));
   } catch (err) {
     next(err);
   }
