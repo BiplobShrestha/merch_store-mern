@@ -47,6 +47,14 @@ function stageLabel(stage) {
 }
 
 export default function OrderTrackingMap({ tracking }) {
+  if (tracking?.stage === 'error') {
+    return (
+      <div className="tracking-empty tracking-error">
+        Couldn't load tracking: {tracking.message}
+      </div>
+    );
+  }
+
   if (!tracking || tracking.stage === 'not-started' || tracking.stage === 'cancelled') {
     return (
       <div className="tracking-empty">
