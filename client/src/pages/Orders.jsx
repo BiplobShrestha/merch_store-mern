@@ -96,14 +96,7 @@ export default function Orders() {
         const { data } = await api.get(`/orders/${orderId}/tracking`);
         setTrackingData((prev) => ({ ...prev, [orderId]: data }));
       } catch (err) {
-        const status = err.response?.status;
-        const serverMsg = err.response?.data?.message;
-        const message = serverMsg
-          ? `${serverMsg}${status ? ` (${status})` : ''}`
-          : err.request
-            ? 'Could not reach the server. Check your connection or try again.'
-            : 'Something went wrong loading tracking.';
-        setTrackingData((prev) => ({ ...prev, [orderId]: { stage: 'error', message } }));
+        setTrackingData((prev) => ({ ...prev, [orderId]: { stage: 'cancelled' } }));
       } finally {
         setTrackingLoading(false);
       }
