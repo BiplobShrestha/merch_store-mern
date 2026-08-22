@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Polyline, CircleMarker, Popup } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -23,32 +24,68 @@ const customerIcon = L.divIcon({
   iconAnchor: [12, 24],
 });
 
+// Fetch a real road-following route from OSRM's free public demo server.
+// Falls back to a straight line if the request fails for any reason.
+async function fetchRoadRoute(from, to) {
+  try {
+    const url = `https://router.project-osrm.org/route/v1/driving/${from.lng},${from.lat};${to.lng},${to.lat}?overview=full&geometries=geojson`;
+    const res = await fetch(url);
+    const data = await res.json();
+    const coords = data?.routes?.[0]?.geometry?.coordinates;
+    if (coords) return coords.map(([lng, lat]) => [lat, lng]);
+  } catch (err) {
+    // fall through to straight line
+  }
+  return [[from.lat, from.lng], [to.lat, to.lng]];
+}
+
 export default function OrderTrackingMap({ data }) {
-  if (!data || !data.mainWarehouse || !data.assignedWarehouse) {
+  const [mainToAssignedRoute, setMainToAssignedRoute] = useState(null);
+  const [assignedToCustomerRoute, setAssignedToCustomerRoute] = useState(null);
+
+  const mainWarehouse = data?.mainWarehouse;
+  const assignedWarehouse = data?.assignedWarehouse;
+  const deliveryLocation = data?.deliveryLocation;
+
+  useEffect(() => {
+    if (!mainWarehouse || !assignedWarehouse) return;
+    fetchRoadRoute(mainWarehouse, assignedWarehouse).then(setMainToAssignedRoute);
+  }, [mainWarehouse, assignedWarehouse]);
+
+  useEffect(() => {
+    if (!assignedWarehouse || !deliveryLocation) return;
+    fetchRoadRoute(assignedWarehouse, deliveryLocation).then(setAssignedToCustomerRoute);
+  }, [assignedWarehouse, deliveryLocation]);
+
+  if (!mainWarehouse || !assignedWarehouse) {
     return <div className="tracking-empty">Warehouse info not available for this order.</div>;
   }
 
-  const { mainWarehouse, assignedWarehouse, deliveryLocation, distanceToWarehouseKm } = data;
   const mainPos = [mainWarehouse.lat, mainWarehouse.lng];
   const assignedPos = [assignedWarehouse.lat, assignedWarehouse.lng];
   const customerPos = deliveryLocation ? [deliveryLocation.lat, deliveryLocation.lng] : null;
-
-  const center = assignedPos;
+  const distanceToWarehouseKm = data?.distanceToWarehouseKm;
 
   return (
     <div className="tracking-map-wrap">
-      <MapContainer center={center} zoom={12} scrollWheelZoom={false} className="tracking-leaflet-map">
+      <MapContainer center={assignedPos} zoom={12} scrollWheelZoom={false} className="tracking-leaflet-map">
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
 
-        {/* Main warehouse -> assigned regional warehouse, the dispatch route */}
-        <Polyline positions={[mainPos, assignedPos]} pathOptions={{ color: '#5a8f00', weight: 4 }} />
+        {/* Main warehouse -> assigned regional warehouse, following real roads */}
+        <Polyline
+          positions={mainToAssignedRoute || [mainPos, assignedPos]}
+          pathOptions={{ color: '#9fe030', weight: 5, opacity: 0.9 }}
+        />
 
-        {/* assigned warehouse -> customer, last-mile (dashed, informational only) */}
+        {/* assigned warehouse -> customer, following real roads (dashed, informational) */}
         {customerPos && (
-          <Polyline positions={[assignedPos, customerPos]} pathOptions={{ color: '#8a8474', weight: 2, dashArray: '5 6' }} />
+          <Polyline
+            positions={assignedToCustomerRoute || [assignedPos, customerPos]}
+            pathOptions={{ color: '#b7afe0', weight: 3, dashArray: '6 6', opacity: 0.85 }}
+          />
         )}
 
         <Marker position={mainPos} icon={mainIcon}>
@@ -63,6 +100,12 @@ export default function OrderTrackingMap({ data }) {
           </Marker>
         )}
       </MapContainer>
+
+      <div className="tracking-legend">
+        <span className="legend-item"><span className="legend-swatch legend-main" /> Main Warehouse</span>
+        <span className="legend-item"><span className="legend-swatch legend-assigned" /> Nearest Warehouse (assigned to this order)</span>
+        <span className="legend-item"><span className="legend-swatch legend-pin" /> Your delivery location</span>
+      </div>
 
       <div className="tracking-status-row">
         <span className="tracking-stage-badge stage-leg2">Dispatched from {assignedWarehouse.name}</span>
