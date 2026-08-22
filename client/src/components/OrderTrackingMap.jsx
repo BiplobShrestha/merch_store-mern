@@ -31,17 +31,20 @@ async function fetchRoadRoute(from, to) {
     const url = `https://router.project-osrm.org/route/v1/driving/${from.lng},${from.lat};${to.lng},${to.lat}?overview=full&geometries=geojson`;
     const res = await fetch(url);
     const data = await res.json();
-    const coords = data?.routes?.[0]?.geometry?.coordinates;
-    if (coords) return coords.map(([lng, lat]) => [lat, lng]);
+    const route = data?.routes?.[0];
+    const coords = route?.geometry?.coordinates;
+    if (coords) {
+      return { positions: coords.map(([lng, lat]) => [lat, lng]), distanceKm: route.distance / 1000 };
+    }
   } catch (err) {
     // fall through to straight line
   }
-  return [[from.lat, from.lng], [to.lat, to.lng]];
+  return { positions: [[from.lat, from.lng], [to.lat, to.lng]], distanceKm: null };
 }
 
 export default function OrderTrackingMap({ data }) {
-  const [mainToAssignedRoute, setMainToAssignedRoute] = useState(null);
-  const [assignedToCustomerRoute, setAssignedToCustomerRoute] = useState(null);
+  const [mainToAssigned, setMainToAssigned] = useState(null); // { positions, distanceKm }
+  const [assignedToCustomer, setAssignedToCustomer] = useState(null);
 
   const mainWarehouse = data?.mainWarehouse;
   const assignedWarehouse = data?.assignedWarehouse;
@@ -49,12 +52,12 @@ export default function OrderTrackingMap({ data }) {
 
   useEffect(() => {
     if (!mainWarehouse || !assignedWarehouse) return;
-    fetchRoadRoute(mainWarehouse, assignedWarehouse).then(setMainToAssignedRoute);
+    fetchRoadRoute(mainWarehouse, assignedWarehouse).then(setMainToAssigned);
   }, [mainWarehouse, assignedWarehouse]);
 
   useEffect(() => {
     if (!assignedWarehouse || !deliveryLocation) return;
-    fetchRoadRoute(assignedWarehouse, deliveryLocation).then(setAssignedToCustomerRoute);
+    fetchRoadRoute(assignedWarehouse, deliveryLocation).then(setAssignedToCustomer);
   }, [assignedWarehouse, deliveryLocation]);
 
   if (!mainWarehouse || !assignedWarehouse) {
@@ -64,7 +67,6 @@ export default function OrderTrackingMap({ data }) {
   const mainPos = [mainWarehouse.lat, mainWarehouse.lng];
   const assignedPos = [assignedWarehouse.lat, assignedWarehouse.lng];
   const customerPos = deliveryLocation ? [deliveryLocation.lat, deliveryLocation.lng] : null;
-  const distanceToWarehouseKm = data?.distanceToWarehouseKm;
 
   return (
     <div className="tracking-map-wrap">
@@ -76,15 +78,15 @@ export default function OrderTrackingMap({ data }) {
 
         {/* Main warehouse -> assigned regional warehouse, following real roads */}
         <Polyline
-          positions={mainToAssignedRoute || [mainPos, assignedPos]}
+          positions={mainToAssigned?.positions || [mainPos, assignedPos]}
           pathOptions={{ color: '#9fe030', weight: 5, opacity: 0.9 }}
         />
 
-        {/* assigned warehouse -> customer, following real roads (dashed, informational) */}
+        {/* assigned warehouse -> customer, following real roads */}
         {customerPos && (
           <Polyline
-            positions={assignedToCustomerRoute || [assignedPos, customerPos]}
-            pathOptions={{ color: '#b7afe0', weight: 3, dashArray: '6 6', opacity: 0.85 }}
+            positions={assignedToCustomer?.positions || [assignedPos, customerPos]}
+            pathOptions={{ color: '#4fb0e0', weight: 4, opacity: 0.95 }}
           />
         )}
 
@@ -103,15 +105,17 @@ export default function OrderTrackingMap({ data }) {
 
       <div className="tracking-legend">
         <span className="legend-item"><span className="legend-swatch legend-main" /> Main Warehouse</span>
-        <span className="legend-item"><span className="legend-swatch legend-assigned" /> Nearest Warehouse (assigned to this order)</span>
+        <span className="legend-item"><span className="legend-swatch legend-assigned" /> Nearest Warehouse (assigned)</span>
         <span className="legend-item"><span className="legend-swatch legend-pin" /> Your delivery location</span>
       </div>
 
       <div className="tracking-status-row">
         <span className="tracking-stage-badge stage-leg2">Dispatched from {assignedWarehouse.name}</span>
-        {typeof distanceToWarehouseKm === 'number' && (
-          <span className="tracking-eta">{distanceToWarehouseKm.toFixed(1)} km from warehouse to you</span>
-        )}
+        <span className="tracking-eta">
+          {mainToAssigned?.distanceKm != null && `Main → Warehouse: ${mainToAssigned.distanceKm.toFixed(1)} km`}
+          {mainToAssigned?.distanceKm != null && assignedToCustomer?.distanceKm != null && ' · '}
+          {assignedToCustomer?.distanceKm != null && `Warehouse → You: ${assignedToCustomer.distanceKm.toFixed(1)} km`}
+        </span>
       </div>
     </div>
   );
