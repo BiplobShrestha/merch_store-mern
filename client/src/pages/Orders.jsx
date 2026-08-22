@@ -60,7 +60,7 @@ export default function Orders() {
   const [orders, setOrders] = useState([]);
   const [ratedItems, setRatedItems] = useState({});
   const [expandedTracking, setExpandedTracking] = useState(null); // order id or null
-  const [trackingData, setTrackingData] = useState({}); // { [orderId]: trackingResult }
+  const [trackingData, setTrackingData] = useState({}); // { [orderId]: warehouseResult }
   const [trackingLoading, setTrackingLoading] = useState(false);
 
   const load = async () => {
@@ -93,10 +93,10 @@ export default function Orders() {
     if (!trackingData[orderId]) {
       setTrackingLoading(true);
       try {
-        const { data } = await api.get(`/orders/${orderId}/tracking`);
+        const { data } = await api.get(`/orders/${orderId}/warehouse`);
         setTrackingData((prev) => ({ ...prev, [orderId]: data }));
       } catch (err) {
-        setTrackingData((prev) => ({ ...prev, [orderId]: { stage: 'cancelled' } }));
+        setTrackingData((prev) => ({ ...prev, [orderId]: null }));
       } finally {
         setTrackingLoading(false);
       }
@@ -158,27 +158,30 @@ export default function Orders() {
             <div className="order-card-footer">
               <span className="order-total"><strong>Total: Rs. {order.total}</strong></span>
 
-              {order.status === 'Delivered' && firstUnratedIdx !== -1 ? (
-                <RateWidget
-                  orderId={order._id}
-                  productId={productIds[firstUnratedIdx]}
-                  onRated={() => markRated(order._id, productIds[firstUnratedIdx])}
-                />
-              ) : order.status === 'Delivered' ? (
-                <span className="rated-badge">✓ Rated</span>
-              ) : (
-                <button className={`track-btn status-${order.status}`} onClick={() => toggleTracking(order._id)}>
-                  {expandedTracking === order._id ? 'Hide Tracking' : 'Track Order'}
+              <div className="order-footer-actions">
+                {order.status === 'Delivered' && (
+                  firstUnratedIdx !== -1 ? (
+                    <RateWidget
+                      orderId={order._id}
+                      productId={productIds[firstUnratedIdx]}
+                      onRated={() => markRated(order._id, productIds[firstUnratedIdx])}
+                    />
+                  ) : (
+                    <span className="rated-badge">✓ Rated</span>
+                  )
+                )}
+                <button className="track-btn status-Processing" onClick={() => toggleTracking(order._id)}>
+                  {expandedTracking === order._id ? 'Hide Warehouse Info' : 'View Warehouse'}
                 </button>
-              )}
+              </div>
             </div>
 
             {expandedTracking === order._id && (
               <div className="order-tracking-panel">
                 {trackingLoading && !trackingData[order._id] ? (
-                  <p className="rate-note">Loading tracking...</p>
+                  <p className="rate-note">Loading warehouse info...</p>
                 ) : (
-                  <OrderTrackingMap tracking={trackingData[order._id]} />
+                  <OrderTrackingMap data={trackingData[order._id]} />
                 )}
               </div>
             )}

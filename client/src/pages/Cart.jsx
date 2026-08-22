@@ -2,11 +2,11 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import api from '../api/axios';
 import { useCart } from '../context/CartContext.jsx';
+import LocationPicker from '../components/LocationPicker.jsx';
 
 const VALID_PROMO_CODES = { SAVE10: 0.1 };
 const FREE_SHIPPING_THRESHOLD = 2000;
 const FLAT_SHIPPING = 150;
-const DELIVERY_REGIONS = ['Kathmandu', 'Pokhara', 'Butwal', 'Birgunj', 'Biratnagar', 'Itahari', 'Nepalgunj'];
 
 export default function Cart() {
   const [cart, setCart] = useState(null);
@@ -15,7 +15,7 @@ export default function Cart() {
   const [appliedPromo, setAppliedPromo] = useState(null); // { code, rate }
   const [promoNote, setPromoNote] = useState('');
   const [checkingOut, setCheckingOut] = useState(false);
-  const [region, setRegion] = useState('');
+  const [deliveryLocation, setDeliveryLocation] = useState(null); // { lat, lng }
   const navigate = useNavigate();
   const { refreshCart } = useCart();
 
@@ -61,14 +61,14 @@ export default function Cart() {
   };
 
   const checkout = async () => {
-    if (!region) {
-      setMessage('Please select a delivery region first.');
+    if (!deliveryLocation) {
+      setMessage('Please set your delivery location on the map first.');
       return;
     }
     setCheckingOut(true);
     setMessage('');
     try {
-      await api.post('/orders', { region, ...(appliedPromo ? { promoCode: appliedPromo.code } : {}) });
+      await api.post('/orders', { deliveryLocation, ...(appliedPromo ? { promoCode: appliedPromo.code } : {}) });
       setMessage('Order placed!');
       refreshCart();
       setTimeout(() => navigate('/orders'), 1000);
@@ -115,6 +115,11 @@ export default function Cart() {
       )}
 
       {message && <p>{message}</p>}
+
+      <div className="field">
+        <label>Delivery Location</label>
+        <LocationPicker value={deliveryLocation} onChange={setDeliveryLocation} />
+      </div>
 
       <div className="cart-layout">
         <div className="cart-items">
@@ -186,22 +191,6 @@ export default function Cart() {
             </form>
           )}
           {promoNote && <p className="promo-note">{promoNote}</p>}
-
-          <div className="field">
-            <label htmlFor="region">Delivery Region</label>
-            <select
-              id="region"
-              className="region-select"
-              value={region}
-              onChange={(e) => setRegion(e.target.value)}
-              required
-            >
-              <option value="">Select your region...</option>
-              {DELIVERY_REGIONS.map((r) => (
-                <option key={r} value={r}>{r}</option>
-              ))}
-            </select>
-          </div>
 
           <button className="checkout-btn" onClick={checkout} disabled={checkingOut}>
             {checkingOut ? 'Placing order...' : 'Checkout'}

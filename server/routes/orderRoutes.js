@@ -4,17 +4,16 @@ const Cart = require('../models/Cart');
 const Product = require('../models/Product');
 const Order = require('../models/Order');
 const { protect, admin } = require('../middleware/auth');
-const { shortestPathFromKathmandu, DELIVERY_REGIONS } = require('../utils/graph');
-const { computeTracking } = require('../utils/tracking');
+const { MAIN_WAREHOUSE, findNearestWarehouse } = require('../utils/warehouses');
 
 const router = express.Router();
 
 // @route POST /api/orders  - checkout: turns cart into an order
 router.post('/', protect, async (req, res, next) => {
   try {
-    const region = req.body?.region;
-    if (!region || !DELIVERY_REGIONS.includes(region)) {
-      return res.status(400).json({ message: 'Please select a valid delivery region' });
+    const { lat, lng } = req.body?.deliveryLocation || {};
+    if (typeof lat !== 'number' || typeof lng !== 'number') {
+      return res.status(400).json({ message: 'Please set your delivery location on the map' });
     }
 
     const cart = await Cart.findOne({ user: req.user._id }).populate('items.product');
@@ -62,13 +61,18 @@ router.post('/', protect, async (req, res, next) => {
     const discountAmount = Math.round(total * discountRate);
     const finalTotal = total - discountAmount;
 
+    // Assign nearest warehouse immediately - static calculation, no live tracking involved.
+    const { warehouse, distanceKm } = findNearestWarehouse({ lat, lng });
+
     const order = await Order.create({
       user: req.user._id,
       items: orderItems,
       total: finalTotal,
       discountCode: appliedCode,
       discountAmount,
-      region,
+      deliveryLocation: { lat, lng },
+      assignedWarehouse: warehouse,
+      distanceToWarehouseKm: distanceKm,
     });
 
     // clear the cart
@@ -107,14 +111,6 @@ router.put('/:id/status', protect, admin, async (req, res, next) => {
     const { status } = req.body;
     const order = await Order.findById(req.params.id);
     if (!order) return res.status(404).json({ message: 'Order not found' });
-
-    // Trigger tracking start exactly once: first time an order moves to Processing.
-    if (status === 'Processing' && !order.approvedAt) {
-      order.approvedAt = new Date();
-      const route = shortestPathFromKathmandu(order.region);
-      order.route = route;
-    }
-
     order.status = status;
     await order.save();
     res.json(order);
@@ -134,8 +130,8 @@ router.delete('/:id', protect, admin, async (req, res, next) => {
   }
 });
 
-// @route GET /api/orders/:id/tracking  - computed shipment position (owner or admin only)
-router.get('/:id/tracking', protect, async (req, res, next) => {
+// @route GET /api/orders/:id/warehouse  - main warehouse + this order's assigned warehouse info (owner or admin only)
+router.get('/:id/warehouse', protect, async (req, res, next) => {
   try {
     const order = await Order.findById(req.params.id);
     if (!order) return res.status(404).json({ message: 'Order not found' });
@@ -145,7 +141,12 @@ router.get('/:id/tracking', protect, async (req, res, next) => {
       return res.status(403).json({ message: 'Not authorized to view this order' });
     }
 
-    res.json(computeTracking(order));
+    res.json({
+      mainWarehouse: MAIN_WAREHOUSE,
+      assignedWarehouse: order.assignedWarehouse,
+      deliveryLocation: order.deliveryLocation,
+      distanceToWarehouseKm: order.distanceToWarehouseKm,
+    });
   } catch (err) {
     next(err);
   }

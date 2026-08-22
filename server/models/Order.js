@@ -15,17 +15,16 @@ const orderSchema = new mongoose.Schema(
     total: { type: Number, required: true },
     discountCode: { type: String },
     discountAmount: { type: Number, default: 0 },
-    region: {
-      type: String,
-      enum: ['Kathmandu', 'Pokhara', 'Butwal', 'Birgunj', 'Biratnagar', 'Itahari', 'Nepalgunj'],
-      required: true,
+    deliveryLocation: {
+      lat: { type: Number, required: true },
+      lng: { type: Number, required: true },
     },
-    approvedAt: { type: Date, default: null },
-    route: {
-      waypoints: [{ type: String }],
-      edgeDistances: [{ type: Number }],
-      distanceKm: { type: Number },
+    assignedWarehouse: {
+      name: { type: String },
+      lat: { type: Number },
+      lng: { type: Number },
     },
+    distanceToWarehouseKm: { type: Number },
     status: {
       type: String,
       enum: ['Pending', 'Processing', 'Shipped', 'Delivered', 'Cancelled'],
